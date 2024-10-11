@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import signal
+import socket
+from selectors import DefaultSelector, EVENT_READ
+
 from io import BytesIO, TextIOWrapper
 import json
 from http.server import (
@@ -14,8 +18,18 @@ from urllib import parse
 import re
 import os
 
-
+INTERRUPT_READ, INTERRUPT_WRITE = socket.socketpair()
 SERVER_CLASS = HTTPServer if os.environ.get("DEBUG") else ThreadingHTTPServer
+
+
+# degine and register signal handler
+def signal_handler(signum, frame):
+    print("HTTPd signal handler called with signal", signum)
+    INTERRUPT_WRITE.send(b"\0")
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -145,11 +159,27 @@ def run_simple(address="", port=8000):
 
 def run(address="", port=8000):
     httpd = SERVER_CLASS((address, port), RequestHandler)
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nGood bye!")
+
+
+def run_listener(address="", port=8000):
+    httpd = SERVER_CLASS((address, port), RequestHandler)
+
+    sel = DefaultSelector()
+    sel.register(INTERRUPT_READ, EVENT_READ)
+    sel.register(httpd, EVENT_READ)
+
+    while True:
+        for key, _ in sel.select():
+            if key.fileobj == INTERRUPT_READ:
+                INTERRUPT_READ.recv(1)
+                return
+            if key.fileobj == httpd:
+                httpd.handle_request()
 
 
 if __name__ == "__main__":
-    try:
-        run()
-    except KeyboardInterrupt:
-        print("\nGood bye!")
+    run()
