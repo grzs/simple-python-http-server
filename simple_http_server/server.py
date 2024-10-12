@@ -128,7 +128,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.data_buffer.seek(0)
                 self.data_buffer.write(f.read())
                 self.response_headers.add_header(
-                    "Content-Length", self.data_buffer.tell()
+                    "Content-Length", str(self.data_buffer.tell())
                 )
                 return 200
         else:
@@ -148,7 +148,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             data = path[1:]
 
         json.dump(data, self.data_buffer)
-        self.response_headers.add_header("Content-Length", self.data_buffer.tell())
+        self.response_headers.add_header("Content-Length", str(self.data_buffer.tell()))
         return 200
 
 

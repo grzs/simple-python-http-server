@@ -9,7 +9,7 @@ def main():
     pid = httpd.start()
     print("Server started (pid: %d)" % pid)
 
-    req = request.Request('http://localhost:8000')
+    req = request.Request('http://localhost:8000/foo/bar')
     req.add_header("Content-Type", "application/json")
     with request.urlopen(req) as f:
         print("body: ", f.read(300).decode())
