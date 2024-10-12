@@ -165,8 +165,8 @@ def run(address="", port=8000):
         print("\nGood bye!")
 
 
-def run_listener(address="", port=8000):
-    httpd = SERVER_CLASS((address, port), RequestHandler)
+def run_listener(address="", port=8000, request_handler=RequestHandler):
+    httpd = SERVER_CLASS((address, port), request_handler)
 
     sel = DefaultSelector()
     sel.register(INTERRUPT_READ, EVENT_READ)
