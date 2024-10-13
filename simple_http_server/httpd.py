@@ -43,11 +43,11 @@ class HTTPd:
     def listen_forever(self):
         """Safe listener loop.
         1. creating a socket pair (like a directed pipe with one end for write, the other for read)
-        2. define a signal handler that writes a binary zero to the socket
+        2. define a signal handler that writes the signal number to the pipe
         3. register the handler to interrupt events
         4. create a selector and register the read end of the socket, and the http server
-           (as selector listens on file objects, HTTPServer must has a proper fileno() method
-        5. check the registered file objects in an infinite loop,
+           (as selector listens on file objects, HTTPServer must has a proper fileno attribute)
+        5. check the registered file objects in an infinite loop (I/O multiplexing),
            which breaks if data appears on the socket
         """
         # 1
@@ -55,9 +55,7 @@ class HTTPd:
 
         # 2
         def signal_handler(signum, frame):
-            _logger.debug(
-                "HTTPd signal handler called with signal %s" % signal.Signals(signum).name
-            )
+            _logger.debug("HTTPd signal handler called with signal %d" % signal.Signals(signum))
             # sending zero to the other end, that will break event listener loop
             interrupt_write.send(signum.to_bytes(1, "big"))
 
@@ -71,7 +69,7 @@ class HTTPd:
         selector.register(self.http_server, EVENT_READ)
 
         # 5
-        _logger.debug("Entering to listener loop")
+        _logger.debug("Entering listener loop")
         while True:
             for key, _ in selector.select():
                 if key.fileobj == interrupt_read:
