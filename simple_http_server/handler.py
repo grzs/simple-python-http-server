@@ -1,46 +1,17 @@
-#!/usr/bin/env python3
-
-import signal
-import socket
-from selectors import DefaultSelector, EVENT_READ
-
 from io import BytesIO, TextIOWrapper
-import json
-from http.server import (
-    HTTPStatus,
-    HTTPServer,
-    ThreadingHTTPServer,
-    BaseHTTPRequestHandler,
-    SimpleHTTPRequestHandler,
-)
+from http.server import BaseHTTPRequestHandler, HTTPStatus
 from http.client import HTTPMessage
 from urllib import parse
 import re
 import os
-
+import json
 import logging
 
-_loghandler = logging.StreamHandler()
-_loghandler.setFormatter(
-    logging.Formatter(
-        "{asctime} {name} ({process}) {levelname:>6} : {message}", style="{"
-    )
-)
+from .logger import loghandler, loglevel
+
 _logger = logging.getLogger(__name__)
-_logger.addHandler(_loghandler)
-
-INTERRUPT_READ, INTERRUPT_WRITE = socket.socketpair()
-SERVER_CLASS = HTTPServer if os.environ.get("DEBUG") else ThreadingHTTPServer
-
-
-# degine and register signal handler
-def signal_handler(signum, frame):
-    _logger.debug("HTTPd signal handler called with signal %d" % signum)
-    INTERRUPT_WRITE.send(b"\0")
-
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+_logger.addHandler(loghandler)
+_logger.setLevel(loglevel)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -195,36 +166,3 @@ class RequestHandler(BaseHTTPRequestHandler):
             "Content-Length", str(self.response_body.tell())
         )
         return 200
-
-
-def run_simple(address="", port=8000):
-    httpd = SERVER_CLASS((address, port), SimpleHTTPRequestHandler)
-    httpd.serve_forever()
-
-
-def run(address="", port=8000):
-    httpd = SERVER_CLASS((address, port), RequestHandler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        _logger.info("\nGood bye!")
-
-
-def run_listener(address="", port=8000, request_handler=RequestHandler):
-    httpd = SERVER_CLASS((address, port), request_handler)
-
-    sel = DefaultSelector()
-    sel.register(INTERRUPT_READ, EVENT_READ)
-    sel.register(httpd, EVENT_READ)
-
-    while True:
-        for key, _ in sel.select():
-            if key.fileobj == INTERRUPT_READ:
-                INTERRUPT_READ.recv(1)
-                return
-            if key.fileobj == httpd:
-                httpd.handle_request()
-
-
-if __name__ == "__main__":
-    run()

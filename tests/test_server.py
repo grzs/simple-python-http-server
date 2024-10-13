@@ -1,40 +1,19 @@
-import os
 import json
 from time import sleep
 from urllib import request
 from urllib.error import URLError
 from unittest import TestCase
 
-from simple_http_server.daemon import HTTPd
+from simple_http_server.httpd import HTTPd
+from simple_http_server.logger import loghandler
 
 import logging
 
 # logging
 _logger = logging.getLogger(__name__)
-
-
-def set_logging():
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter(
-            "{asctime} {name:25} ({process}) {levelname:>6} : {message}", style="{"
-        )
-    )
-    _logger.addHandler(handler)
-
-    if (level := os.environ.get("LOGLEVEL")) not in [
-        "INFO",
-        "ERROR",
-        "DEBUG",
-        "WARNING",
-    ]:
-        level = logging.DEBUG
-
-    _logger.setLevel(level)
-    logging.getLogger("simple_http_server").setLevel(level)
-
-
-set_logging()
+_logger.addHandler(loghandler)
+_logger.setLevel(logging.DEBUG)
+logging.getLogger("simple_http_server").setLevel(logging.DEBUG)
 
 
 class HTTPdTestCase(TestCase):

@@ -1,6 +1,6 @@
 name: Simple Python HTTP Server
 
-on: [push]
+on: workflow_dispatch
 
 jobs:
   test:
