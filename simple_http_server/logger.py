@@ -3,7 +3,7 @@ from logging import StreamHandler, Formatter, INFO
 
 loghandler = StreamHandler()
 logformatter = Formatter(
-    "{asctime} {name:25} ({process}) {levelname:>6} : {message}", style="{"
+    "{asctime} {name:26} ({process}) {levelname:>6} : {message}", style="{"
 )
 loghandler.setFormatter(logformatter)
 

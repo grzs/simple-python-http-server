@@ -46,7 +46,8 @@ class HTTPd:
         2. define a signal handler that writes a binary zero to the socket
         3. register the handler to interrupt events
         4. create a selector and register the read end of the socket, and the http server
-        5. check the registered endpoints in an infinite loop,
+           (as selector listens on file objects, HTTPServer must has a proper fileno() method
+        5. check the registered file objects in an infinite loop,
            which breaks if data appears on the socket
         """
         # 1
@@ -54,9 +55,11 @@ class HTTPd:
 
         # 2
         def signal_handler(signum, frame):
-            _logger.debug("HTTPd signal handler called with signal %d" % signum)
+            _logger.debug(
+                "HTTPd signal handler called with signal %s" % signal.Signals(signum).name
+            )
             # sending zero to the other end, that will break event listener loop
-            interrupt_write.send(b"\0")
+            interrupt_write.send(signum.to_bytes(1, "big"))
 
         # 3
         signal.signal(signal.SIGINT, signal_handler)
@@ -73,8 +76,11 @@ class HTTPd:
             for key, _ in selector.select():
                 if key.fileobj == interrupt_read:
                     # receiving one byte
-                    interrupt_read.recv(1)
-                    _logger.debug("Interrput signal received, returning from listener loop")
+                    signum = int.from_bytes(interrupt_read.recv(1), "big")
+                    _logger.debug(
+                        "Signal %s received, returning from listener loop"
+                        % signal.Signals(signum).name
+                    )
                     return
                 if key.fileobj == self.http_server:
                     _logger.debug("Request received, passing to handler")
