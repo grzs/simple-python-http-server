@@ -1,4 +1,4 @@
-name: Python test
+name: Simple Python HTTP Server
 
 on: [push]
 
@@ -16,6 +16,5 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # You can test your matrix by printing the current Python version
-      - name: Display Python version
+      - name: Run tests
         run: python -m unittest
