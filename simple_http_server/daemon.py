@@ -36,3 +36,6 @@ class HTTPd:
 
         _logger.info("HTTP server is exited with code: %s" % self.process.exitcode)
         return self.process.exitcode
+
+    def is_alive(self):
+        return self.process.is_alive()
