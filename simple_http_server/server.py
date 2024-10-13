@@ -18,13 +18,24 @@ from urllib import parse
 import re
 import os
 
+import logging
+
+_loghandler = logging.StreamHandler()
+_loghandler.setFormatter(
+    logging.Formatter(
+        "{asctime} {name} ({process}) {levelname:6} : {message}", style="{"
+    )
+)
+_logger = logging.getLogger(__name__)
+_logger.addHandler(_loghandler)
+
 INTERRUPT_READ, INTERRUPT_WRITE = socket.socketpair()
 SERVER_CLASS = HTTPServer if os.environ.get("DEBUG") else ThreadingHTTPServer
 
 
 # degine and register signal handler
 def signal_handler(signum, frame):
-    print("HTTPd signal handler called with signal", signum)
+    _logger.debug("HTTPd signal handler called with signal %d" % signum)
     INTERRUPT_WRITE.send(b"\0")
 
 
@@ -41,7 +52,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         return default
 
     def _preprocess(self):
-        self.data_buffer = TextIOWrapper(BytesIO(), newline="\n")
+        self.response_body = TextIOWrapper(BytesIO(), newline="\n")
         self.response_headers = HTTPMessage()
 
         # content type
@@ -57,11 +68,41 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.body_size = int(self._headers_iget("content-length", 0))
         self.bbody = self.rfile.read(self.body_size)
 
-    def _write_response_body(self):
-        """write data_buffer to output stream"""
+    def _flush_response_body(self):
+        """write response_body buffer to output output stream"""
 
-        self.data_buffer.seek(0)
-        self.wfile.write(self.data_buffer.buffer.read())
+        self.response_body.seek(0)
+        self.wfile.write(self.response_body.buffer.read())
+
+    def log_message(self, format, *args):
+        """Log an arbitrary message.
+
+        This is used by all other logging functions.  Override
+        it if you have specific logging wishes.
+
+        The first argument, FORMAT, is a format string for the
+        message to be logged.  If the format string contains
+        any % escapes requiring parameters, they should be
+        specified as subsequent arguments (it's just like
+        printf!).
+
+        The client ip and current date/time are prefixed to
+        every message.
+
+        Unicode control characters are replaced with escaped hex
+        before writing the output to stderr.
+
+        """
+
+        message = format % args
+        _logger.info(
+            "%s - - %s"
+            % (
+                self.address_string(),
+                # self.log_date_time_string(),
+                message.translate(self._control_char_table),
+            )
+        )
 
     def send_response_headers_body(self):
         status_code = self.dispatch()
@@ -76,7 +117,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
 
-        self._write_response_body()
+        self._flush_response_body()
 
     def do_HEAD(self):
         """Serve a HEAD request."""
@@ -102,12 +143,12 @@ class RequestHandler(BaseHTTPRequestHandler):
     # methods to override
     def process_body(self):
         if self.content_type == "application/json":
-            print("body", json.loads(self.bbody.decode()))
+            _logger.debug("body", json.loads(self.bbody.decode()))
         else:
-            print("body:", self.bbody.decode())
+            _logger.debug("body:", self.bbody.decode())
 
     def dispatch(self):
-        print(self.content_type)
+        _logger.debug("Content-Type: %s" % self.content_type)
         if re.search(r"\.[a-z0-9]+$", self.path_path):
             return self.serve_file()
         elif self.content_type == "application/x-www-form-urlencoded":
@@ -118,17 +159,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             return 404
 
     def serve_form(self):
-        print(self.query_params)
+        _logger.debug(self.query_params)
         return 200
 
     def serve_file(self):
         file_path = self.path_path[1:]
         if os.path.isfile(file_path):
             with open(file_path) as f:
-                self.data_buffer.seek(0)
-                self.data_buffer.write(f.read())
+                self.response_body.seek(0)
+                self.response_body.write(f.read())
                 self.response_headers.add_header(
-                    "Content-Length", str(self.data_buffer.tell())
+                    "Content-Length", str(self.response_body.tell())
                 )
                 return 200
         else:
@@ -147,8 +188,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             data = path[1:]
 
-        json.dump(data, self.data_buffer)
-        self.response_headers.add_header("Content-Length", str(self.data_buffer.tell()))
+        # dump json to response_body buffer
+        self.response_body.seek(0)
+        json.dump(data, self.response_body)
+        self.response_headers.add_header(
+            "Content-Length", str(self.response_body.tell())
+        )
         return 200
 
 
@@ -162,7 +207,7 @@ def run(address="", port=8000):
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nGood bye!")
+        _logger.info("\nGood bye!")
 
 
 def run_listener(address="", port=8000, request_handler=RequestHandler):

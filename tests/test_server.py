@@ -1,8 +1,26 @@
+import os
 from time import sleep
 from urllib import request
 from urllib.error import URLError
 
 from simple_http_server.daemon import HTTPd
+
+import logging
+
+_loghandler = logging.StreamHandler()
+_loghandler.setFormatter(
+    logging.Formatter(
+        "{asctime} {name:25} ({process}) {levelname:6} : {message}", style="{"
+    )
+)
+_logger = logging.getLogger(os.path.basename(__file__))
+_logger.addHandler(_loghandler)
+
+
+def set_logging(level=logging.INFO):
+    httpd_logger = logging.getLogger("simple_http_server")
+    httpd_logger.setLevel(level)
+    _logger.setLevel(level)
 
 
 def main():
@@ -12,9 +30,9 @@ def main():
 
     # start server
     httpd = HTTPd(address=address, port=port)
-    print("Starting server")
+    _logger.info("Starting server")
     pid = httpd.start()
-    print("Server started (pid: %d)" % pid)
+    _logger.info("Server started (pid: %d)" % pid)
 
     # probe connection
     req_head = request.Request(base_url, method="HEAD")
@@ -22,13 +40,13 @@ def main():
     attempt_nr = 0
     while attempt_nr < timeout:
         attempt_nr += 1
-        print(f"Probing connection (attempt #{attempt_nr}) ...")
+        _logger.info("Probing connection (attempt #%d) ..." % attempt_nr)
         try:
             request.urlopen(req_head)
         except URLError:
-            print("... not ready yet")
+            _logger.info("... not ready yet")
         else:
-            print("... ready!")
+            _logger.info("... ready!")
             break
         sleep(1)
 
@@ -37,13 +55,16 @@ def main():
     req = request.Request(f"{base_url}{path}")
     req.add_header("Content-Type", "application/json")
     with request.urlopen(req) as f:
-        print("body: ", f.read(300).decode())
+        _logger.info("body: %s" % f.read(300).decode())
 
     # stop server
-    print("Stopping server")
+    _logger.info("Stopping server")
     exitcode = httpd.stop()
-    print("Server is exited with code:", (exitcode if exitcode is not None else "N/A"))
+    _logger.info(
+        "Server is exited with code: %s" % (exitcode if exitcode is not None else "N/A")
+    )
 
 
 if __name__ == "__main__":
+    set_logging(logging.DEBUG)
     main()
