@@ -16,6 +16,7 @@ class HTTPd:
 
     def start(self):
         self.process.start()
+        _logger.info("Server started (pid: %d)" % self.process.pid)
         return self.process.pid
 
     def stop(self, timeout=10):
@@ -33,4 +34,5 @@ class HTTPd:
             sleep(1)
             seconds += 1
 
+        _logger.info("HTTP server is exited with code: %s" % self.process.exitcode)
         return self.process.exitcode

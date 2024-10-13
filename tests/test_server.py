@@ -7,20 +7,24 @@ from simple_http_server.daemon import HTTPd
 
 import logging
 
-_loghandler = logging.StreamHandler()
-_loghandler.setFormatter(
-    logging.Formatter(
-        "{asctime} {name:25} ({process}) {levelname:6} : {message}", style="{"
-    )
-)
+# logging
 _logger = logging.getLogger(os.path.basename(__file__))
-_logger.addHandler(_loghandler)
 
 
-def set_logging(level=logging.INFO):
-    httpd_logger = logging.getLogger("simple_http_server")
-    httpd_logger.setLevel(level)
+def set_logging():
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
+            "{asctime} {name:25} ({process}) {levelname:>6} : {message}", style="{"
+        )
+    )
+    _logger.addHandler(handler)
+
+    if (level := os.environ.get("LOGLEVEL")) not in ["INFO", "ERROR", "DEBUG", "WARNING"]:
+        level = logging.INFO
+
     _logger.setLevel(level)
+    logging.getLogger("simple_http_server").setLevel(level)
 
 
 def main():
@@ -30,9 +34,8 @@ def main():
 
     # start server
     httpd = HTTPd(address=address, port=port)
-    _logger.info("Starting server")
-    pid = httpd.start()
-    _logger.info("Server started (pid: %d)" % pid)
+    _logger.debug("Starting HTTP server")
+    httpd.start()
 
     # probe connection
     req_head = request.Request(base_url, method="HEAD")
@@ -55,16 +58,13 @@ def main():
     req = request.Request(f"{base_url}{path}")
     req.add_header("Content-Type", "application/json")
     with request.urlopen(req) as f:
-        _logger.info("body: %s" % f.read(300).decode())
+        _logger.info("response body: %s" % f.read(300).decode())
 
     # stop server
-    _logger.info("Stopping server")
-    exitcode = httpd.stop()
-    _logger.info(
-        "Server is exited with code: %s" % (exitcode if exitcode is not None else "N/A")
-    )
+    _logger.debug("Stopping HTTP server")
+    httpd.stop()
 
 
 if __name__ == "__main__":
-    set_logging(logging.DEBUG)
+    set_logging()
     main()

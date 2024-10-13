@@ -23,7 +23,7 @@ import logging
 _loghandler = logging.StreamHandler()
 _loghandler.setFormatter(
     logging.Formatter(
-        "{asctime} {name} ({process}) {levelname:6} : {message}", style="{"
+        "{asctime} {name} ({process}) {levelname:>6} : {message}", style="{"
     )
 )
 _logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         message = format % args
         _logger.info(
-            "%s - - %s"
+            "request from %s - - %s"
             % (
                 self.address_string(),
                 # self.log_date_time_string(),
@@ -143,12 +143,12 @@ class RequestHandler(BaseHTTPRequestHandler):
     # methods to override
     def process_body(self):
         if self.content_type == "application/json":
-            _logger.debug("body", json.loads(self.bbody.decode()))
+            _logger.debug("request body", json.loads(self.bbody.decode()))
         else:
-            _logger.debug("body:", self.bbody.decode())
+            _logger.debug("request body:", self.bbody.decode())
 
     def dispatch(self):
-        _logger.debug("Content-Type: %s" % self.content_type)
+        _logger.debug("request Content-Type: %s" % self.content_type)
         if re.search(r"\.[a-z0-9]+$", self.path_path):
             return self.serve_file()
         elif self.content_type == "application/x-www-form-urlencoded":
@@ -159,7 +159,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return 404
 
     def serve_form(self):
-        _logger.debug(self.query_params)
+        _logger.debug("request params: %s" % self.query_params)
         return 200
 
     def serve_file(self):
