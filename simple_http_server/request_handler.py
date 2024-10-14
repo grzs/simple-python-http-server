@@ -5,6 +5,8 @@ from urllib import parse
 import re
 import os
 import json
+import datetime
+from base64 import b64encode
 import logging
 
 from .log_handler import loghandler, loglevel
@@ -39,15 +41,47 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.query_params = parse.parse_qs(path_parts.query)
         self.fragment = path_parts.fragment
 
+        self._preprocess_body()
+        self._dump_request()
+
     def _preprocess_body(self):
         self.body_size = int(self._headers_iget("content-length", 0))
         self.bbody = self.rfile.read(self.body_size)
 
     def _dump_request(self):
-        # TODO
-        # make directory
-        # url, path, params, fragment, headers, body|base64
-        pass
+        if self.dump_request_dir is None:
+            return
+
+        if not os.path.isdir(self.dump_request_dir):
+            _logger.info("Creating directory %s" % self.dump_request_dir)
+            os.mkdir(self.dump_request_dir)
+
+        filepath = os.path.join(
+            self.dump_request_dir,
+            datetime.datetime.strftime(
+                datetime.datetime.utcnow(), "%y-%m-%d_%H%M%S.json"
+            ),
+        )
+
+        _logger.info("Dumping request data to file %s" % filepath)
+        with open(filepath, "w") as f:
+            json.dump(
+                {
+                    "client_address": ("%s:%s" % self.client_address),
+                    "url": {
+                        "path": self.path_path,
+                        "query_params": self.query_params,
+                        "fragment": self.fragment,
+                    },
+                    "method": self.requestline.split(" ")[0],
+                    "headers": dict(self.headers.items()),
+                    "body": b64encode(self.bbody).decode() if self.bbody else "",
+                    "version": self.request_version,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     def _flush_response_body(self):
         """write response_body buffer to output stream"""
@@ -103,6 +137,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         """Serve a HEAD request."""
 
+        self._preprocess()
         self.send_response(HTTPStatus.OK)
         self.end_headers()
 
