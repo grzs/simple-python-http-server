@@ -1,7 +1,6 @@
 from http.server import HTTPServer, ThreadingHTTPServer
 
-import signal
-import socket
+from signal import Signals, SIGINT
 from selectors import DefaultSelector, EVENT_READ
 from multiprocessing import Process
 
@@ -9,8 +8,9 @@ from time import sleep
 import os
 import logging
 
-from .handler import RequestHandler
-from .logger import loghandler, loglevel
+from .request_handler import RequestHandler
+from .signal_handler import SignalHandler
+from .log_handler import loghandler, loglevel
 
 _logger = logging.getLogger(
     os.path.basename(__file__) if __name__ == "__main__" else __name__
@@ -21,92 +21,61 @@ _logger.setLevel(loglevel)
 SERVER_CLASS = HTTPServer if os.environ.get("DEBUG") else ThreadingHTTPServer
 
 
-class SignalHandler:
-    def __init__(self, signals=None):
-        signals = signals or [signal.SIGINT, signal.SIGTERM]
-
-        self.interrupt_read, self.interrupt_write = socket.socketpair()
-
-        for sig in signals:
-            # TODO: check if it's a signal
-            signal.signal(sig, self._handler)
-
-    def _handler(self, signum, frame):
-        _logger.debug(
-            "Signal handler called with signal %s" % signal.Signals(signum).name
-        )
-        # sending signum to the other end
-        self.interrupt_write.send(signum.to_bytes(1, "big"))
-
-    def close(self):
-        self.interrupt_write.close()
-        self.interrupt_read.close()
-
-
 class HTTPd:
     def __init__(
         self, address="", port=8000, request_handler=RequestHandler, kill_timeout=10
     ):
+        self.httpd = SERVER_CLASS((address, port), request_handler)
+
+        self.selector = DefaultSelector()
+        self.selector.register(self.httpd, EVENT_READ)
+
         self.kill_timeout = kill_timeout
-        self.server_params = ((address, port), request_handler)
         self.daemon = Process(
             target=self.listen_forever,
             name="httpd",
             daemon=True,
         )
 
+    def __del__(self):
+        self.stop()
+        self.httpd.server_close()
+
     def __enter__(self):
         self.start()
         return self
 
     def __exit__(self, *args, **kwargs):
-        self.stop()
+        self.__del__()
 
     def listen_forever(self):
-        """Safe listener loop.
-        1. create a signal handler instance and an http server instance
-        2. create a selector and register the read end of the signal handler, and the http server
-        3. check the registered file objects in an infinite loop (I/O multiplexing),
-           which breaks if data appears on the socket
-        4. unregister and close httpd and signal handler
-        """
-        # 1
-        signal_handler = SignalHandler()
-        httpd = SERVER_CLASS(*self.server_params)
+        with SignalHandler(port=self.httpd.server_port + 1) as sh_client:
+            self.selector.register(sh_client, EVENT_READ)
+            self._listener_loop(sh_client)
+            self.selector.unregister(sh_client)
 
-        # 2
-        selector = DefaultSelector()
-        selector.register(signal_handler.interrupt_read, EVENT_READ)
-        selector.register(httpd, EVENT_READ)
-
-        # 3
+    def _listener_loop(self, sh_client):
+        """I/O multiplexing loop, exiting when receiving signal from signal_handler."""
         sigint_count = 0
         _logger.debug("Entering I/O multiplexing loop")
         while True:
-            for key, _ in selector.select():
-                if key.fileobj == signal_handler.interrupt_read:
-                    signum = int.from_bytes(signal_handler.interrupt_read.recv(1), "big")
-                    signal_type = signal.Signals(signum)
+            for key, _ in self.selector.select():
+                if key.fileobj == sh_client:
+                    signum = int.from_bytes(sh_client.recv(1), "big")
+                    signal_type = Signals(signum)
                     _logger.debug("Signal %s received" % signal_type.name)
                     # here would bu possible some sophisticated event handling
-                    if signal_type == signal.SIGINT and not sigint_count:
+                    if signal_type == SIGINT and not sigint_count:
                         _logger.warning(
                             "Send SIGTERM or press Ctrl-C again for graceful shutdown."
                         )
                         sigint_count += 1
                     else:
-                        _logger.debug("Returning from lisntener loop")
+                        _logger.debug("Returning from listener loop")
                         return
-                if key.fileobj == httpd:
+                if key.fileobj == self.httpd:
                     _logger.debug("Request received, passing to handler")
-                    httpd.handle_request()
-
-        # 4
-        selector.unregister(httpd)
-        httpd.server_close()
-
-        selector.unregister(signal_handler.interrupt_read)
-        signal_handler.close()
+                    self.httpd.handle_request()
 
     def start(self):
         """Starts the listener as a child process"""
@@ -129,7 +98,7 @@ class HTTPd:
                 _logger.critical("timout exceeded, killing process!")
                 self.daemon.kill()
             else:
-                _logger.debug("... %d seconds left" % self.kill_timeout - seconds)
+                _logger.debug("... %d seconds left" % (self.kill_timeout - seconds))
             sleep(1)
             seconds += 1
 

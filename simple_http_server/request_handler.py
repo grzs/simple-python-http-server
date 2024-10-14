@@ -7,7 +7,7 @@ import os
 import json
 import logging
 
-from .logger import loghandler, loglevel
+from .log_handler import loghandler, loglevel
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(loghandler)
@@ -15,6 +15,10 @@ _logger.setLevel(loglevel)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
+    # can be overriden in subclass or by monkey-patch
+    # if set, requests are dumped to this directory
+    dump_request_dir = None
+
     def _headers_iget(self, key, default=None):
         """insensitive search in headers by key"""
         for h_key in self.headers.keys():
@@ -29,7 +33,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         # content type
         self.content_type = self._headers_iget("content-type", "text/plain").lower()
 
-        # parse header
+        # parse url
         path_parts = parse.urlsplit(self.path)
         self.path_path = path_parts.path
         self.query_params = parse.parse_qs(path_parts.query)
@@ -38,6 +42,12 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _preprocess_body(self):
         self.body_size = int(self._headers_iget("content-length", 0))
         self.bbody = self.rfile.read(self.body_size)
+
+    def _dump_request(self):
+        # TODO
+        # make directory
+        # url, path, params, fragment, headers, body|base64
+        pass
 
     def _flush_response_body(self):
         """write response_body buffer to output stream"""

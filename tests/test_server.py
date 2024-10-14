@@ -1,11 +1,10 @@
 import json
 from time import sleep
 from urllib import request
-from urllib.error import URLError
 from unittest import TestCase
 
 from simple_http_server.httpd import HTTPd
-from simple_http_server.logger import loghandler
+from simple_http_server.log_handler import loghandler
 
 import logging
 
