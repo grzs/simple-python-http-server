@@ -16,6 +16,22 @@ _logger.setLevel(logging.DEBUG)
 logging.getLogger("simple_http_server").setLevel(logging.DEBUG)
 
 
+class HTTPdContextMgrTestCase(TestCase):
+    def test_context_manager(self):
+        address = "localhost"
+        port = 8000
+        base_url = f"http://{address}:{port}"
+        req_head = request.Request(base_url, method="HEAD")
+
+        # start server
+        _logger.info("Starting HTTP server in context manager")
+        with HTTPd(address=address, port=port) as httpd:
+            self.assertTrue(httpd.is_alive())
+            res = request.urlopen(req_head)
+
+        self.assertEqual(res.code, 200)
+
+
 class HTTPdTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -33,24 +49,7 @@ class HTTPdTestCase(TestCase):
 
     def test_connection(self):
         req_head = request.Request(self.base_url, method="HEAD")
-        timeout = 3
-        attempt_nr = 0
-        while True:
-            attempt_nr += 1
-            _logger.info("Probing connection (attempt #%d) ..." % attempt_nr)
-            try:
-                res = request.urlopen(req_head)
-            except URLError as e:
-                if attempt_nr < timeout:
-                    _logger.info("... not ready yet")
-                else:
-                    _logger.error("timeout exceeded!")
-                    raise e
-            else:
-                _logger.info("... ready!")
-                break
-            sleep(1)
-
+        res = request.urlopen(req_head)
         self.assertEqual(res.code, 200)
 
     def test_get_request(self):
