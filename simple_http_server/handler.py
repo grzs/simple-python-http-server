@@ -40,7 +40,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.bbody = self.rfile.read(self.body_size)
 
     def _flush_response_body(self):
-        """write response_body buffer to output output stream"""
+        """write response_body buffer to output stream"""
 
         self.response_body.seek(0)
         self.wfile.write(self.response_body.buffer.read())

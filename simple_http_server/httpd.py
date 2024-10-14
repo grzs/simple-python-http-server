@@ -21,12 +21,34 @@ _logger.setLevel(loglevel)
 SERVER_CLASS = HTTPServer if os.environ.get("DEBUG") else ThreadingHTTPServer
 
 
+class SignalHandler:
+    def __init__(self, signals=None):
+        signals = signals or [signal.SIGINT, signal.SIGTERM]
+
+        self.interrupt_read, self.interrupt_write = socket.socketpair()
+
+        for sig in signals:
+            # TODO: check if it's a signal
+            signal.signal(sig, self._handler)
+
+    def _handler(self, signum, frame):
+        _logger.debug(
+            "Signal handler called with signal %s" % signal.Signals(signum).name
+        )
+        # sending signum to the other end
+        self.interrupt_write.send(signum.to_bytes(1, "big"))
+
+    def close(self):
+        self.interrupt_write.close()
+        self.interrupt_read.close()
+
+
 class HTTPd:
     def __init__(
         self, address="", port=8000, request_handler=RequestHandler, kill_timeout=10
     ):
         self.kill_timeout = kill_timeout
-        self.http_server = SERVER_CLASS((address, port), request_handler)
+        self.server_params = ((address, port), request_handler)
         self.daemon = Process(
             target=self.listen_forever,
             name="httpd",
@@ -42,47 +64,49 @@ class HTTPd:
 
     def listen_forever(self):
         """Safe listener loop.
-        1. creating a socket pair (like a directed pipe with one end for write, the other for read)
-        2. define a signal handler that writes the signal number to the pipe
-        3. register the handler to interrupt events
-        4. create a selector and register the read end of the socket, and the http server
-           (as selector listens on file objects, HTTPServer must has a proper fileno attribute)
-        5. check the registered file objects in an infinite loop (I/O multiplexing),
+        1. create a signal handler instance and an http server instance
+        2. create a selector and register the read end of the signal handler, and the http server
+        3. check the registered file objects in an infinite loop (I/O multiplexing),
            which breaks if data appears on the socket
+        4. unregister and close httpd and signal handler
         """
         # 1
-        interrupt_read, interrupt_write = socket.socketpair()
+        signal_handler = SignalHandler()
+        httpd = SERVER_CLASS(*self.server_params)
 
         # 2
-        def signal_handler(signum, frame):
-            _logger.debug("HTTPd signal handler called with signal %d" % signal.Signals(signum))
-            # sending zero to the other end, that will break event listener loop
-            interrupt_write.send(signum.to_bytes(1, "big"))
+        selector = DefaultSelector()
+        selector.register(signal_handler.interrupt_read, EVENT_READ)
+        selector.register(httpd, EVENT_READ)
 
         # 3
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        # 4
-        selector = DefaultSelector()
-        selector.register(interrupt_read, EVENT_READ)
-        selector.register(self.http_server, EVENT_READ)
-
-        # 5
-        _logger.debug("Entering listener loop")
+        sigint_count = 0
+        _logger.debug("Entering I/O multiplexing loop")
         while True:
             for key, _ in selector.select():
-                if key.fileobj == interrupt_read:
-                    # receiving one byte
-                    signum = int.from_bytes(interrupt_read.recv(1), "big")
-                    _logger.debug(
-                        "Signal %s received, returning from listener loop"
-                        % signal.Signals(signum).name
-                    )
-                    return
-                if key.fileobj == self.http_server:
+                if key.fileobj == signal_handler.interrupt_read:
+                    signum = int.from_bytes(signal_handler.interrupt_read.recv(1), "big")
+                    signal_type = signal.Signals(signum)
+                    _logger.debug("Signal %s received" % signal_type.name)
+                    # here would bu possible some sophisticated event handling
+                    if signal_type == signal.SIGINT and not sigint_count:
+                        _logger.warning(
+                            "Send SIGTERM or press Ctrl-C again for graceful shutdown."
+                        )
+                        sigint_count += 1
+                    else:
+                        _logger.debug("Returning from lisntener loop")
+                        return
+                if key.fileobj == httpd:
                     _logger.debug("Request received, passing to handler")
-                    self.http_server.handle_request()
+                    httpd.handle_request()
+
+        # 4
+        selector.unregister(httpd)
+        httpd.server_close()
+
+        selector.unregister(signal_handler.interrupt_read)
+        signal_handler.close()
 
     def start(self):
         """Starts the listener as a child process"""
