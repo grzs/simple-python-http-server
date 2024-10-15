@@ -26,7 +26,10 @@ class SignalHandler:
         self.server.listen()
 
     def __del__(self):
-        self._close()
+        try:
+            self._close()
+        except OSError as e:
+            _logger.error(e)
 
     def __enter__(self):
         return self.client_create()

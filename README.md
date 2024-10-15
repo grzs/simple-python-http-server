@@ -1,9 +1,29 @@
+# Run server in foreground #
+
+```
+python3 -m simple_http_server.httpd
+```
+
+# Environment Variables #
+
+```
+HTTPD_LOGLEVEL
+HTTPD_TEST_KEEP_DUMP_FILES
+```
+
+# Testing #
+
+```
+HTTPD_LOGLEVEL=DEBUG python -m unittest -q
+```
+
+
 # Examples #
 
 ```
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from simple_http_server.handler import RequestHandler
-from simple_http_server.daemon import HTTPd
+from simple_http_server.request_handler import RequestHandler
+from simple_http_server.httpd import HTTPd
 
 from time import sleep
 
