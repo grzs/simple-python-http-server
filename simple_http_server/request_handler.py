@@ -17,9 +17,12 @@ _logger.setLevel(loglevel)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    # can be overriden in subclass or by monkey-patch
-    # if set, requests are dumped to this directory
+    """dump_request_dir and requests should be overriden in subclass or by monkey-patch.
+    If dump_request_dir set to a string, requests are dumped to a directory created at this path.
+    if requests is a list, request data is saved into this"""
+
     dump_request_dir = None
+    requests = None
 
     def _headers_iget(self, key, default=None):
         """insensitive search in headers by key"""
@@ -48,8 +51,29 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.body_size = int(self._headers_iget("content-length", 0))
         self.bbody = self.rfile.read(self.body_size)
 
+    def _collect_request_data(self):
+        return {
+            "client_address": ("%s:%s" % self.client_address),
+            "url": {
+                "path": self.path_path,
+                "query_params": self.query_params,
+                "fragment": self.fragment,
+            },
+            "method": self.requestline.split(" ")[0],
+            "headers": dict(self.headers.items()),
+            "body": b64encode(self.bbody).decode() if self.bbody else "",
+            "version": self.request_version,
+        }
+
+    def _keep_request(self):
+        if not isinstance(self.requests, list):
+            return
+
+        _logger.info("Append request data to cls.requests")
+        self.requests.append(self._collect_request_data())
+
     def _dump_request(self):
-        if self.dump_request_dir is None:
+        if not isinstance(self.dump_request_dir, str):
             return
 
         if not os.path.isdir(self.dump_request_dir):
@@ -65,23 +89,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         _logger.info("Dumping request data to file %s" % filepath)
         with open(filepath, "w") as f:
-            json.dump(
-                {
-                    "client_address": ("%s:%s" % self.client_address),
-                    "url": {
-                        "path": self.path_path,
-                        "query_params": self.query_params,
-                        "fragment": self.fragment,
-                    },
-                    "method": self.requestline.split(" ")[0],
-                    "headers": dict(self.headers.items()),
-                    "body": b64encode(self.bbody).decode() if self.bbody else "",
-                    "version": self.request_version,
-                },
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
+            json.dump(self._collect_request_data(), f, ensure_ascii=False, indent=2)
 
     def _flush_response_body(self):
         """write response_body buffer to output stream"""

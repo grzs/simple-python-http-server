@@ -19,6 +19,7 @@ DUMP_REQUEST_DIR = "/tmp/test_requests/"
 
 
 class RequestHandlerTest(RequestHandler):
+    requests = []
     dump_request_dir = DUMP_REQUEST_DIR
 
 
@@ -48,11 +49,10 @@ class HTTPdTestCase(TestCase):
         cls.base_url = f"http://{address}:{port}"
 
         # start server
+        _logger.debug("Starting HTTP server")
         cls.httpd = HTTPd(
             address=address, port=port, request_handler=RequestHandlerTest
         )
-        _logger.debug("Starting HTTP server")
-        cls.httpd.start()
 
     def test_connection(self):
         req_head = request.Request(self.base_url, method="HEAD")
@@ -94,7 +94,7 @@ class HTTPdTestCase(TestCase):
     @classmethod
     def tearDownClass(cls):
         _logger.debug("Stopping HTTP server")
-        cls.httpd.stop()
+        del cls.httpd
 
         if os.environ.get("HTTPD_TEST_KEEP_DUMP_FILES"):
             return

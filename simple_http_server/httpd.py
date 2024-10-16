@@ -4,6 +4,9 @@ from signal import Signals, SIGINT
 from selectors import DefaultSelector, EVENT_READ
 from multiprocessing import Process
 
+from urllib import request
+from urllib.error import URLError
+
 from time import sleep
 import os
 import logging
@@ -25,36 +28,46 @@ class HTTPd:
     def __init__(
         self, address="", port=8000, request_handler=RequestHandler, kill_timeout=10
     ):
-        self.httpd = SERVER_CLASS((address, port), request_handler)
-
+        self.address = address
+        self.port = port
+        self.request_handler = request_handler
         self.selector = DefaultSelector()
-        self.selector.register(self.httpd, EVENT_READ)
 
         self.kill_timeout = kill_timeout
         self.daemon = Process(
-            target=self.listen_forever,
+            target=self.serve_forever,
             name="httpd",
             daemon=True,
         )
+        self.daemon.start()
+        self._wait_until_alive()
+        _logger.info("Server started (pid: %d)" % self.daemon.pid)
 
-    def __del__(self):
-        self.stop()
-        self.httpd.server_close()
+    def _wait_until_alive(self, timeout=10):
+        req_head = request.Request(f"http://{self.address}:{self.port}", method="HEAD")
 
-    def __enter__(self):
-        self.start()
-        return self
+        _logger.info("Waiting for server booting ...")
+        while (timeout := timeout - 1):
+            try:
+                if self.daemon.is_alive():
+                    request.urlopen(req_head)
+                _logger.info("... ready!")
+                return
+            except URLError as err:
+                _logger.warning(err.reason)
+            sleep(1)
+            _logger.debug("%d second left" % timeout)
 
-    def __exit__(self, *args, **kwargs):
-        self.__del__()
-
-    def listen_forever(self):
-        with SignalHandler(port=self.httpd.server_port + 1) as sh_client:
+    def serve_forever(self):
+        with SignalHandler(port=self.port + 1) as sh_client:
+            httpd = SERVER_CLASS((self.address, self.port), self.request_handler)
+            self.selector.register(httpd, EVENT_READ)
             self.selector.register(sh_client, EVENT_READ)
-            self._listener_loop(sh_client)
+            self._listener_loop(sh_client, httpd)
             self.selector.unregister(sh_client)
+            httpd.server_close()
 
-    def _listener_loop(self, sh_client):
+    def _listener_loop(self, sh_client, httpd):
         """I/O multiplexing loop, exiting when receiving signal from signal_handler."""
         sigint_count = 0
         _logger.debug("Entering I/O multiplexing loop")
@@ -73,17 +86,14 @@ class HTTPd:
                     else:
                         _logger.debug("Returning from listener loop")
                         return
-                if key.fileobj == self.httpd:
+                if key.fileobj == httpd:
                     _logger.debug("Request received, passing to handler")
-                    self.httpd.handle_request()
+                    httpd.handle_request()
 
-    def start(self):
-        """Starts the listener as a child process"""
-        self.daemon.start()
-        _logger.info("Server started (pid: %d)" % self.daemon.pid)
-        return self.daemon.pid
+    def is_alive(self):
+        return self.daemon.is_alive()
 
-    def stop(self):
+    def __del__(self):
         """Sends an interrupt signal to the listener"""
         if not self.daemon.is_alive():
             return
@@ -105,10 +115,13 @@ class HTTPd:
         _logger.info("Server exited with code: %s" % self.daemon.exitcode)
         return self.daemon.exitcode
 
-    def is_alive(self):
-        return self.daemon.is_alive()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.__del__()
 
 
 if __name__ == "__main__":
     _logger.info("Starting HTTP server in foreground")
-    HTTPd().listen_forever()
+    HTTPd().serve_forever()
