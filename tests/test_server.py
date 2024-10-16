@@ -37,10 +37,11 @@ class HTTPdContextMgrTestCase(TestCase):
             self.assertTrue(httpd.is_alive())
             res = request.urlopen(req_head)
             request_data = httpd.read_pipe()
-            request_data2 = httpd.read_pipe(timeout=1)
 
         self.assertEqual(res.code, 200)
         self.assertTrue(isinstance(request_data, dict))
+
+        request_data2 = httpd.read_pipe(timeout=1)
         self.assertFalse(request_data2)
 
 
