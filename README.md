@@ -60,7 +60,3 @@ python -im tests.test_server
 >>> test.test_connection()
 >>> test.httpd.read_pipe()
 ```
-
-## Run server in foreground ##
-
-HTTPD_LOGLEVEL=DEBUG python -m simple_http_server.httpd
