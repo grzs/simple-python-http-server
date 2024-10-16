@@ -50,3 +50,17 @@ def start_do_something_and_exit(timeout=3):
 if __name__ == "__main__":
     start_do_something_and_exit()
 ```
+
+## Run test cases interactively ##
+
+```
+python -im tests.test_server
+>>> test = HTTPdTestCase()
+>>> test.setUpClass()
+>>> test.test_connection()
+>>> test.httpd.read_pipe()
+```
+
+## Run server in foreground ##
+
+HTTPD_LOGLEVEL=DEBUG python -m simple_http_server.httpd

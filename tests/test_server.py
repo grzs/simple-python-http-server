@@ -19,7 +19,6 @@ DUMP_REQUEST_DIR = "/tmp/test_requests/"
 
 
 class RequestHandlerTest(RequestHandler):
-    requests = []
     dump_request_dir = DUMP_REQUEST_DIR
 
 
@@ -37,8 +36,12 @@ class HTTPdContextMgrTestCase(TestCase):
         ) as httpd:
             self.assertTrue(httpd.is_alive())
             res = request.urlopen(req_head)
+            request_data = httpd.read_pipe()
+            request_data2 = httpd.read_pipe(timeout=1)
 
         self.assertEqual(res.code, 200)
+        self.assertTrue(isinstance(request_data, dict))
+        self.assertFalse(request_data2)
 
 
 class HTTPdTestCase(TestCase):

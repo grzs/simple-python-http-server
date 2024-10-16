@@ -19,10 +19,10 @@ _logger.setLevel(loglevel)
 class RequestHandler(BaseHTTPRequestHandler):
     """dump_request_dir and requests should be overriden in subclass or by monkey-patch.
     If dump_request_dir set to a string, requests are dumped to a directory created at this path.
-    if requests is a list, request data is saved into this"""
+    if pipe_writer is an endpoint of a multiprocessing.Pipe, request data will be sent into it"""
 
     dump_request_dir = None
-    requests = None
+    pipe_writer = None
 
     def _headers_iget(self, key, default=None):
         """insensitive search in headers by key"""
@@ -45,7 +45,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.fragment = path_parts.fragment
 
         self._preprocess_body()
-        self._dump_request()
+        request_data = self._collect_request_data()
+        self._keep_request(request_data)
+        self._dump_request(request_data)
 
     def _preprocess_body(self):
         self.body_size = int(self._headers_iget("content-length", 0))
@@ -65,14 +67,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             "version": self.request_version,
         }
 
-    def _keep_request(self):
-        if not isinstance(self.requests, list):
+    @classmethod
+    def _keep_request(cls, data):
+        # if not isinstance(cls.requests, list):
+        if cls.pipe_writer is None:
             return
 
-        _logger.info("Append request data to cls.requests")
-        self.requests.append(self._collect_request_data())
+        _logger.info("Sending request data to parent process through pipe")
+        cls.pipe_writer.send(data)
 
-    def _dump_request(self):
+    def _dump_request(self, data):
         if not isinstance(self.dump_request_dir, str):
             return
 
@@ -89,7 +93,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         _logger.info("Dumping request data to file %s" % filepath)
         with open(filepath, "w") as f:
-            json.dump(self._collect_request_data(), f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     def _flush_response_body(self):
         """write response_body buffer to output stream"""
